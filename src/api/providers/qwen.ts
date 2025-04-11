@@ -14,6 +14,7 @@ import {
 import { convertToOpenAiMessages } from "../transform/openai-format"
 import { ApiStream } from "../transform/stream"
 import { convertToR1Format } from "../transform/r1-format"
+import { observeOpenAI } from "langfuse"
 
 export class QwenHandler implements ApiHandler {
 	private options: ApiHandlerOptions
@@ -21,13 +22,13 @@ export class QwenHandler implements ApiHandler {
 
 	constructor(options: ApiHandlerOptions) {
 		this.options = options
-		this.client = new OpenAI({
+		this.client = observeOpenAI(new OpenAI({
 			baseURL:
 				this.options.qwenApiLine === "china"
 					? "https://dashscope.aliyuncs.com/compatible-mode/v1"
 					: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
 			apiKey: this.options.qwenApiKey,
-		})
+		}))
 	}
 
 	getModel(): { id: MainlandQwenModelId | InternationalQwenModelId; info: ModelInfo } {

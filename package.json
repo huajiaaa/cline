@@ -392,6 +392,7 @@
 		"globby": "^14.0.2",
 		"ignore": "^7.0.3",
 		"isbinaryfile": "^5.0.2",
+		"langfuse": "^3.37.1",
 		"mammoth": "^1.8.0",
 		"monaco-vscode-textmate-theme-converter": "^0.1.7",
 		"ollama": "^0.5.13",
