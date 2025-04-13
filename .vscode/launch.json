@@ -15,9 +15,9 @@
 			"env": {
 				"IS_DEV": "true",
 				"DEV_WORKSPACE_FOLDER": "${workspaceFolder}",
-				"LANGFUSE_SECRET_KEY": "sk-lf-9032d306-68e6-49b6-88d4-0fb089196684",
-				"LANGFUSE_PUBLIC_KEY": "pk-lf-d2b79125-1768-4c58-8595-9bcd5cb4ab34",
-				"LANGFUSE_BASEURL": "https://us.cloud.langfuse.com"
+				"LANGFUSE_SECRET_KEY": "sk-xxx",
+				"LANGFUSE_PUBLIC_KEY": "pk-xxx",
+				"LANGFUSE_BASEURL": ""
 			}
 		},
 		{
@@ -31,9 +31,9 @@
 				"IS_DEV": "true",
 				"IS_TEST": "true",
 				"DEV_WORKSPACE_FOLDER": "${workspaceFolder}",
-				"LANGFUSE_SECRET_KEY": "sk-lf-9032d306-68e6-49b6-88d4-0fb089196684",
-				"LANGFUSE_PUBLIC_KEY": "pk-lf-d2b79125-1768-4c58-8595-9bcd5cb4ab34",
-				"LANGFUSE_BASEURL": "https://us.cloud.langfuse.com"
+				"LANGFUSE_SECRET_KEY": "sk-xxx",
+				"LANGFUSE_PUBLIC_KEY": "pk-xxx",
+				"LANGFUSE_BASEURL": ""
 			}
 		}
 	]
