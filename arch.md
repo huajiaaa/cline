@@ -99,106 +99,101 @@
 3. **Task**(src/core/task/index.ts)：执行API请求和工具操作
 
 
-# Task类实现总结
+## Task类关键功能实现
 
-## 关键功能实现
+### 1. Task 执行系统概述
 
-### 任务执行循环
+Task 类是负责执行 AI 请求和工具操作的核心类。每个任务都在 Task 类的独立实例中运行，确保隔离性和正确的状态管理。
 
-```typescript
-async initiateTaskLoop(userContent: UserContent): Promise<void> {
-  // 循环执行直到任务被中止
-  while (!this.abort) {
-    // 发送API请求并获取流式响应
-    const stream = this.attemptApiRequest()
-    
-    // 处理流式响应
-    for await (const chunk of stream) {
-      // 解析和呈现内容块
-      // ...
-    }
-    
-    // 等待用户消息内容就绪
-    await pWaitFor(() => this.userMessageContentReady)
-    
-    // 递归处理用户内容
-    const recDidEndLoop = await this.recursivelyMakeClineRequests(
-      this.userMessageContent
-    )
-  }
-}
-```
-
-### API请求处理
+### 2. 核心执行循环
 
 ```typescript
-async *attemptApiRequest(previousApiReqIndex: number): ApiStream {
-  // 等待MCP服务器连接
-  await pWaitFor(() => this.controllerRef.deref()?.mcpHub?.isConnecting !== true)
-
-  // 管理上下文窗口
-  const previousRequest = this.clineMessages[previousApiReqIndex]
-  if (previousRequest?.text) {
-    const { tokensIn, tokensOut } = JSON.parse(previousRequest.text || "{}")
-    const totalTokens = (tokensIn || 0) + (tokensOut || 0)
-    
-    // 如果接近上下文限制，截断对话
-    if (totalTokens >= maxAllowedSize) {
-      this.conversationHistoryDeletedRange = this.contextManager.getNextTruncationRange(
-        this.apiConversationHistory,
-        this.conversationHistoryDeletedRange,
-        totalTokens / 2 > maxAllowedSize ? "quarter" : "half"
+class Task {
+  async initiateTaskLoop(userContent: UserContent, isNewTask: boolean) {
+    while (!this.abort) {
+      // 1. 发起 API 请求并流式处理响应
+      const stream = this.attemptApiRequest()
+      
+      // 2. 解析并展示内容块
+      for await (const chunk of stream) {
+        switch (chunk.type) {
+          case "text":
+            // 解析成内容块
+            this.assistantMessageContent = parseAssistantMessage(chunk.text)
+            // 向用户展示块
+            await this.presentAssistantMessage()
+            break
+        }
+      }
+      
+      // 3. 等待工具执行完成
+      await pWaitFor(() => this.userMessageContentReady)
+      
+      // 4. 使用工具结果继续循环
+      const recDidEndLoop = await this.recursivelyMakeClineRequests(
+        this.userMessageContent
       )
     }
   }
-
-  // 处理流式响应和错误
-  // ...
 }
 ```
 
-![image](https://github.com/user-attachments/assets/76e1cdbb-f424-4d0f-9af2-d063f375d924)
 
-![image](https://github.com/user-attachments/assets/9284c5db-2c6b-41bc-8e41-bfd019b4a9f8)
-
-
-maxAllowedSize = Math.max(contextWindow - 40_000, contextWindow * 0.8)
-
-![image](https://github.com/user-attachments/assets/fb29c900-8516-40a1-af6b-88763cc6a8bf)
-
-messagesToRemove = Math.floor((messages.length - startOfRest) / 4) * 2
-
-
-https://us.cloud.langfuse.com/project/cm9b7c5n001k8ad08t3scbv0l/traces/008184f0-693a-431d-b5e7-29bf015e7d27
-
-### 工具执行
+### 3. 工具执行流程
 
 ```typescript
-async executeCommandTool(command: string): Promise<[boolean, ToolResponse]> {
-  // 获取或创建终端
-  const terminalInfo = await this.terminalManager.getOrCreateTerminal(cwd)
-  terminalInfo.terminal.show()
-
-  // 执行命令并处理输出
-  const process = this.terminalManager.runCommand(terminalInfo, command)
-  
-  // 处理实时输出
-  let result = ""
-  process.on("line", (line) => {
-    result += line + "\n"
-    if (!didContinue) {
-      sendCommandOutput(line)
+class Task {
+  async executeToolWithApproval(block: ToolBlock) {
+    // 1. 检查自动批准设置
+    if (this.shouldAutoApproveTool(block.name)) {
+      await this.say("tool", message)
+      this.consecutiveAutoApprovedRequestsCount++
     } else {
-      this.say("command_output", line)
+      // 2. 请求用户批准
+      const didApprove = await askApproval("tool", message)
+      if (!didApprove) {
+        this.didRejectTool = true
+        return
+      }
     }
-  })
 
-  // 等待完成或用户反馈
-  // ...
+    // 3. 执行工具
+    const result = await this.executeTool(block)
+
+    // 4. 保存检查点
+    await this.saveCheckpoint()
+
+    // 5. 返回结果给 API
+    return result
+  }
 }
 ```
 
-### 上下文管理
+### 4. 错误处理和恢复
+
+```typescript
+class Task {
+  async handleError(action: string, error: Error) {
+    // 1. 检查任务是否被放弃
+    if (this.abandoned) return
+    
+    // 2. 格式化错误消息
+    const errorString = `Error ${action}: ${error.message}`
+    
+    // 3. 向用户展示错误
+    await this.say("error", errorString)
+    
+    // 4. 添加错误到工具结果
+    pushToolResult(formatResponse.toolError(errorString))
+    
+    // 5. 清理资源
+    await this.diffViewProvider.revertChanges()
+    await this.browserSession.closeBrowser()
+  }
+}
+```
+
+### 5. 上下文管理
 
 ```typescript
 async getEnvironmentDetails(includeFileDetails: boolean = false) {
@@ -225,6 +220,201 @@ async getEnvironmentDetails(includeFileDetails: boolean = false) {
 }
 ```
 
+![image](https://github.com/user-attachments/assets/76e1cdbb-f424-4d0f-9af2-d063f375d924)
+
+![image](https://github.com/user-attachments/assets/9284c5db-2c6b-41bc-8e41-bfd019b4a9f8)
+
+
+### 6. API 请求和令牌管理
+
+```typescript
+class Task {
+  async *attemptApiRequest(previousApiReqIndex: number): ApiStream {
+    // 1. 等待 MCP 服务器连接
+    await pWaitFor(() => this.controllerRef.deref()?.mcpHub?.isConnecting !== true)
+
+    // 2. 管理上下文窗口
+    const previousRequest = this.clineMessages[previousApiReqIndex]
+    if (previousRequest?.text) {
+      const { tokensIn, tokensOut } = JSON.parse(previousRequest.text || "{}")
+      const totalTokens = (tokensIn || 0) + (tokensOut || 0)
+      
+      // 如果接近上下文限制则截断对话
+      if (totalTokens >= maxAllowedSize) {
+        this.conversationHistoryDeletedRange = this.contextManager.getNextTruncationRange(
+          this.apiConversationHistory,
+          this.conversationHistoryDeletedRange,
+          totalTokens / 2 > maxAllowedSize ? "quarter" : "half"
+        )
+      }
+    }
+
+    // 3. 处理流式传输和自动重试
+    try {
+      this.isWaitingForFirstChunk = true
+      const firstChunk = await iterator.next()
+      yield firstChunk.value
+      this.isWaitingForFirstChunk = false
+      
+      // 流式传输剩余块
+      yield* iterator
+    } catch (error) {
+      // 4. 错误处理和重试
+      if (isOpenRouter && !this.didAutomaticallyRetryFailedApiRequest) {
+        await setTimeoutPromise(1000)
+        this.didAutomaticallyRetryFailedApiRequest = true
+        yield* this.attemptApiRequest(previousApiReqIndex)
+        return
+      }
+      
+      // 5. 如果自动重试失败则询问用户是否重试
+      const { response } = await this.ask(
+        "api_req_failed",
+        this.formatErrorWithStatusCode(error)
+      )
+      if (response === "yesButtonClicked") {
+        await this.say("api_req_retried")
+        yield* this.attemptApiRequest(previousApiReqIndex)
+        return
+      }
+    }
+  }
+}
+```
+
+maxAllowedSize = Math.max(contextWindow - 40_000, contextWindow * 0.8)
+
+![image](https://github.com/user-attachments/assets/fb29c900-8516-40a1-af6b-88763cc6a8bf)
+
+messagesToRemove = Math.floor((messages.length - startOfRest) / 4) * 2
+
+
+https://us.cloud.langfuse.com/project/cm9b7c5n001k8ad08t3scbv0l/traces/008184f0-693a-431d-b5e7-29bf015e7d27
+
+### 7. 任务状态和恢复
+
+```typescript
+class Task {
+  async resumeTaskFromHistory() {
+    // 1. 加载保存的状态
+    this.clineMessages = await getSavedClineMessages(this.getContext(), this.taskId)
+    this.apiConversationHistory = await getSavedApiConversationHistory(this.getContext(), this.taskId)
+
+    // 2. 处理中断的工具执行
+    const lastMessage = this.apiConversationHistory[this.apiConversationHistory.length - 1]
+    if (lastMessage.role === "assistant") {
+      const toolUseBlocks = content.filter(block => block.type === "tool_use")
+      if (toolUseBlocks.length > 0) {
+        // 添加中断的工具响应
+        const toolResponses = toolUseBlocks.map(block => ({
+          type: "tool_result",
+          tool_use_id: block.id,
+          content: "Task was interrupted before this tool call could be completed."
+        }))
+        modifiedOldUserContent = [...toolResponses]
+      }
+    }
+
+    // 3. 通知中断
+    const agoText = this.getTimeAgoText(lastMessage?.ts)
+    newUserContent.push({
+      type: "text",
+      text: `[TASK RESUMPTION] This task was interrupted ${agoText}. It may or may not be complete, so please reassess the task context.`
+    })
+
+    // 4. 恢复任务执行
+    await this.initiateTaskLoop(newUserContent, false)
+  }
+
+  private async saveTaskState() {
+    // 保存对话历史
+    await saveApiConversationHistory(this.getContext(), this.taskId, this.apiConversationHistory)
+    await saveClineMessages(this.getContext(), this.taskId, this.clineMessages)
+    
+    // 创建检查点
+    const commitHash = await this.checkpointTracker?.commit()
+    
+    // 更新任务历史
+    await this.controllerRef.deref()?.updateTaskHistory({
+      id: this.taskId,
+      ts: lastMessage.ts,
+      task: taskMessage.text,
+      // ... 其他元数据
+    })
+  }
+}
+```
+
+### 8. 终端管理
+
+```typescript
+class Task {
+  async executeCommandTool(command: string): Promise<[boolean, ToolResponse]> {
+    // 1. 获取或创建终端
+    const terminalInfo = await this.terminalManager.getOrCreateTerminal(cwd)
+    terminalInfo.terminal.show()
+
+    // 2. 执行命令并流式输出
+    const process = this.terminalManager.runCommand(terminalInfo, command)
+    
+    // 3. 处理实时输出
+    let result = ""
+    process.on("line", (line) => {
+      result += line + "\n"
+      if (!didContinue) {
+        sendCommandOutput(line)
+      } else {
+        this.say("command_output", line)
+      }
+    })
+
+    // 4. 等待完成或用户反馈
+    let completed = false
+    process.once("completed", () => {
+      completed = true
+    })
+
+    await process
+
+    // 5. 返回结果
+    if (completed) {
+      return [false, `Command executed.\n${result}`]
+    } else {
+      return [
+        false,
+        `Command is still running in the user's terminal.\n${result}\n\nYou will be updated on the terminal status and new output in the future.`
+      ]
+    }
+  }
+}
+```
+
+### 9. 浏览器会话管理
+
+```typescript
+class Task {
+  async executeBrowserAction(action: BrowserAction): Promise<BrowserActionResult> {
+    switch (action) {
+      case "launch":
+        // 1. 启动固定分辨率的浏览器
+        await this.browserSession.launchBrowser()
+        return await this.browserSession.navigateToUrl(url)
+
+      case "click":
+        // 2. 处理带坐标的点击操作
+        return await this.browserSession.click(coordinate)
+
+      case "type":
+        // 3. 处理键盘输入
+        return await this.browserSession.type(text)
+
+      case "close":
+        // 4. 清理资源
+        return await this.browserSession.closeBrowser()
+    }
+  }
+}
+```
 
 ## MCP(模型上下文协议)集成
 
