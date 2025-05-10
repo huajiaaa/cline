@@ -14,7 +14,10 @@
 			"preLaunchTask": "${defaultBuildTask}",
 			"env": {
 				"IS_DEV": "true",
-				"DEV_WORKSPACE_FOLDER": "${workspaceFolder}"
+				"DEV_WORKSPACE_FOLDER": "${workspaceFolder}",
+				"LANGFUSE_SECRET_KEY": "sk-xxx",
+				"LANGFUSE_PUBLIC_KEY": "pk-xxx",
+				"LANGFUSE_BASEURL": ""
 			}
 		},
 		{
@@ -27,7 +30,10 @@
 			"env": {
 				"IS_DEV": "true",
 				"IS_TEST": "true",
-				"DEV_WORKSPACE_FOLDER": "${workspaceFolder}"
+				"DEV_WORKSPACE_FOLDER": "${workspaceFolder}",
+				"LANGFUSE_SECRET_KEY": "sk-xxx",
+				"LANGFUSE_PUBLIC_KEY": "pk-xxx",
+				"LANGFUSE_BASEURL": ""
 			}
 		}
 	]
